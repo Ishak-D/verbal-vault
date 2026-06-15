@@ -29,7 +29,6 @@ export function initFooter() {
           <h4>Resources</h4>
           <a href="#/contact">Contact Us</a>
           <a href="#/register">Register Now</a>
-          <a href="#/admin">Admin Dashboard</a>
         </div>
         
         <div class="footer-column">

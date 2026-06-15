@@ -20,7 +20,17 @@ export class Router {
   }
 
   async handleRoute() {
-    const path = this.getCurrentPath();
+    let path = this.getCurrentPath();
+    
+    // Auth Guard for Administrative Panel
+    if (path === '/admin') {
+      const isLoggedIn = sessionStorage.getItem('verbal_vault_admin_logged_in') === 'true';
+      if (!isLoggedIn) {
+        window.location.hash = '#/admin-login';
+        return;
+      }
+    }
+
     const handler = this.routes[path] || this.routes['/'];
     
     if (handler) {

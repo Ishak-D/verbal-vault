@@ -12,6 +12,7 @@ import { renderClubs } from './pages/clubs.js';
 import { renderContact } from './pages/contact.js';
 import { renderRegister } from './pages/register.js';
 import { renderAdmin } from './pages/admin.js';
+import { renderAdminLogin } from './pages/admin-login.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize Global Components
@@ -30,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
   router.addRoute('/contact', renderContact);
   router.addRoute('/register', renderRegister);
   router.addRoute('/admin', renderAdmin);
+  router.addRoute('/admin-login', renderAdminLogin);
 
   // Start Router
   router.start();

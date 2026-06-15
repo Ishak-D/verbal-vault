@@ -105,7 +105,7 @@ export function renderRegister(container) {
     
     // Custom phone validation fallback just in case
     if (input.id === 'phone' && isValid) {
-      const cleaned = input.value.replace(/\\s/g, '');
+      const cleaned = input.value.replace(/\s/g, '');
       if (cleaned.length < 7) {
         isValid = false;
       }

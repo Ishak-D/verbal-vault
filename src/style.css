@@ -437,6 +437,7 @@ input, select, textarea {
     box-shadow: var(--shadow-2xl);
     transition: right var(--transition-slow);
     overflow-y: auto;
+    z-index: 1000;
   }
 
   .navbar-links.open {

@@ -1,6 +1,13 @@
 import { storage } from '../utils/storage.js';
 
 export function renderAdmin(container) {
+  // Verify Admin Login State
+  const isLoggedIn = sessionStorage.getItem('verbal_vault_admin_logged_in') === 'true';
+  if (!isLoggedIn) {
+    window.location.hash = '#/admin-login';
+    return;
+  }
+
   let registrations = storage.getRegistrations();
   let searchQuery = '';
 
@@ -72,6 +79,9 @@ export function renderAdmin(container) {
             </button>
             <button id="btn-clear-all" class="btn btn-primary" style="background: var(--coral); box-shadow: none; padding: var(--space-2) var(--space-4); font-size: var(--font-sm);">
               Clear All
+            </button>
+            <button id="btn-admin-logout" class="btn btn-outline" style="border-color: var(--coral); color: var(--coral); padding: var(--space-2) var(--space-4); font-size: var(--font-sm);">
+              Logout
             </button>
           </div>
         </div>
@@ -167,6 +177,11 @@ export function renderAdmin(container) {
 
   container.querySelector('#btn-export-csv').addEventListener('click', exportCSV);
   container.querySelector('#btn-clear-all').addEventListener('click', clearAll);
+  container.querySelector('#btn-admin-logout').addEventListener('click', () => {
+    sessionStorage.removeItem('verbal_vault_admin_logged_in');
+    window.dispatchEvent(new CustomEvent('adminLoginStateChanged'));
+    window.location.hash = '#/';
+  });
 
   // Render content initially
   renderTableContent();
