@@ -28,8 +28,17 @@ export function initNavbar() {
   const links = document.getElementById('nav-links');
   const overlay = document.getElementById('nav-overlay');
 
+  // Prevent hamburger double-fire on mobile (touchstart + click)
+  let touchHandled = false;
+
   function toggleMenu(e) {
     if (e) e.preventDefault();
+    if (e && e.type === 'touchstart') {
+      touchHandled = true;
+    } else if (e && e.type === 'click' && touchHandled) {
+      touchHandled = false;
+      return; // Skip click if touchstart already handled it
+    }
     toggle.classList.toggle('open');
     links.classList.toggle('open');
     overlay.classList.toggle('active');
@@ -43,12 +52,10 @@ export function initNavbar() {
     document.body.style.overflow = '';
   }
 
-  // Support both tap and click for faster response on mobile
-  toggle.addEventListener('click', toggleMenu);
   toggle.addEventListener('touchstart', toggleMenu, { passive: false });
+  toggle.addEventListener('click', toggleMenu);
 
   overlay.addEventListener('click', closeMenu);
-  overlay.addEventListener('touchstart', closeMenu, { passive: true });
 
   // Dynamic link rendering based on Auth State
   function renderLinks() {
@@ -65,26 +72,29 @@ export function initNavbar() {
       ${isAdmin ? '<a href="#/" id="nav-logout" style="color: var(--coral); font-weight: 600;">Logout</a>' : '<a href="#/register" class="navbar-cta">Register Now</a>'}
     `;
 
-    // Rebind link closing events
+    // Bind ONLY click events to nav links — NO touchstart.
+    // touchstart was hiding the menu before the browser could fire
+    // the click event, which prevented the <a href> from navigating.
+    // Using a short delay ensures the hash changes before the menu hides.
     links.querySelectorAll('a').forEach(link => {
       if (link.id !== 'nav-logout') {
-        link.addEventListener('click', closeMenu);
-        link.addEventListener('touchstart', closeMenu, { passive: true });
+        link.addEventListener('click', (e) => {
+          // Let the browser follow the <a href> first (changes hash),
+          // then close the menu after a brief delay so navigation completes.
+          setTimeout(closeMenu, 80);
+        });
       }
     });
 
     const logoutBtn = document.getElementById('nav-logout');
     if (logoutBtn) {
-      const handleLogout = (e) => {
+      logoutBtn.addEventListener('click', (e) => {
         e.preventDefault();
         sessionStorage.removeItem('verbal_vault_admin_logged_in');
         closeMenu();
-        // Dispatches global login state change
         window.dispatchEvent(new CustomEvent('adminLoginStateChanged'));
         window.location.hash = '#/';
-      };
-      logoutBtn.addEventListener('click', handleLogout);
-      logoutBtn.addEventListener('touchstart', handleLogout, { passive: false });
+      });
     }
   }
 
