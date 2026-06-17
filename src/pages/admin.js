@@ -8,7 +8,7 @@ export function renderAdmin(container) {
     return;
   }
 
-  let registrations = storage.getRegistrations();
+  let registrations = [];
   let searchQuery = '';
 
   function getFilteredRegistrations() {
@@ -66,6 +66,34 @@ export function renderAdmin(container) {
   }
 
   container.innerHTML = `
+    <style>
+      @keyframes adminSpin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .admin-spinner {
+        display: inline-block;
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(247, 108, 108, 0.1);
+        border-top-color: var(--coral, #f76c6c);
+        border-radius: 50%;
+        animation: adminSpin 1s linear infinite;
+      }
+      .admin-loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 16px;
+        text-align: center;
+      }
+      .admin-error-container {
+        text-align: center;
+        padding: 32px;
+        color: var(--coral, #f76c6c);
+      }
+    </style>
     <div class="admin-page">
       <div class="container animate-on-scroll">
         <div class="admin-header">
@@ -159,12 +187,84 @@ export function renderAdmin(container) {
     document.body.removeChild(link);
   }
 
-  // Clear all registrations
-  function clearAll() {
-    if (confirm('Are you sure you want to clear all registrations? This action cannot be undone.')) {
-      storage.clearRegistrations();
-      registrations = [];
+  // Helper: Show loading state inside the table body
+  function showLoading() {
+    const tbody = container.querySelector('#admin-table-body');
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7">
+            <div class="admin-loading-container">
+              <div class="admin-spinner"></div>
+              <p style="margin-top: 12px; color: var(--gray-600); font-weight: 500;">
+                Fetching registrations from cloud database...
+              </p>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+  }
+
+  // Helper: Show error state inside the table body
+  function showError(msg) {
+    const tbody = container.querySelector('#admin-table-body');
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7">
+            <div class="admin-error-container">
+              <p style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">⚠️ Connection Error</p>
+              <p style="margin-bottom: 16px; color: var(--gray-600); font-size: 14px;">${escapeHTML(msg)}</p>
+              <button id="btn-retry-load" class="btn btn-outline" style="padding: 8px 16px; font-size: 14px; display: inline-block;">
+                Retry Connection
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+      const retryBtn = container.querySelector('#btn-retry-load');
+      if (retryBtn) {
+        retryBtn.addEventListener('click', loadRegistrations);
+      }
+    }
+  }
+
+  // Load registrations from cloud database
+  async function loadRegistrations() {
+    showLoading();
+    try {
+      registrations = await storage.getRegistrations();
       renderTableContent();
+    } catch (e) {
+      console.error('Error loading registrations:', e);
+      showError('Failed to fetch registrations from the server. Check your internet connection.');
+    }
+  }
+
+  // Clear all registrations
+  async function clearAll() {
+    if (confirm('Are you sure you want to clear all registrations? This action cannot be undone.')) {
+      const btn = container.querySelector('#btn-clear-all');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Clearing...';
+      
+      try {
+        const success = await storage.clearRegistrations();
+        if (success) {
+          registrations = [];
+          renderTableContent();
+        } else {
+          alert('Failed to clear registrations from the cloud database.');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('An error occurred while clearing registrations.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
   }
 
@@ -184,12 +284,16 @@ export function renderAdmin(container) {
   });
 
   // Render content initially
-  renderTableContent();
+  loadRegistrations();
 
   // Listen to storage/custom events for real-time dashboard updates
-  const updateHandler = () => {
-    registrations = storage.getRegistrations();
-    renderTableContent();
+  const updateHandler = async () => {
+    try {
+      registrations = await storage.getRegistrations();
+      renderTableContent();
+    } catch (e) {
+      console.warn('Real-time update fetch failed:', e);
+    }
   };
 
   window.addEventListener('registrationAdded', updateHandler);

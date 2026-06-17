@@ -162,37 +162,51 @@ export function renderRegister(container) {
         notes: form.querySelector('#notes').value.trim()
       };
 
-      // Save to localStorage
-      const success = storage.saveRegistration(regData);
+      // Disable submit button and show loading state
+      const submitBtn = form.querySelector('button[type="submit"]');
+      const originalBtnText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
 
-      if (success) {
-        // Render success modal overlay
-        const modalOverlay = document.createElement('div');
-        modalOverlay.className = 'success-overlay';
-        modalOverlay.innerHTML = `
-          <div class="success-modal">
-            <div class="success-icon">✨</div>
-            <h2>Registration Successful!</h2>
-            <p>Thank you for registering with Verbal Vault. Our team will contact you shortly.</p>
-            <button class="btn btn-primary btn-close" style="width: 100%">Close</button>
-          </div>
-        `;
-        document.body.appendChild(modalOverlay);
+      // Save to cloud database (returns a Promise)
+      storage.saveRegistration(regData).then((success) => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
 
-        // Close button behavior
-        modalOverlay.querySelector('.btn-close').addEventListener('click', () => {
-          modalOverlay.remove();
-          form.reset();
-          // Clear styles
-          form.querySelectorAll('.form-group').forEach(group => {
-            group.classList.remove('success', 'error');
+        if (success) {
+          // Render success modal overlay
+          const modalOverlay = document.createElement('div');
+          modalOverlay.className = 'success-overlay';
+          modalOverlay.innerHTML = `
+            <div class="success-modal">
+              <div class="success-icon">✨</div>
+              <h2>Registration Successful!</h2>
+              <p>Thank you for registering with Verbal Vault. Our team will contact you shortly.</p>
+              <button class="btn btn-primary btn-close" style="width: 100%">Close</button>
+            </div>
+          `;
+          document.body.appendChild(modalOverlay);
+
+          // Close button behavior
+          modalOverlay.querySelector('.btn-close').addEventListener('click', () => {
+            modalOverlay.remove();
+            form.reset();
+            // Clear styles
+            form.querySelectorAll('.form-group').forEach(group => {
+              group.classList.remove('success', 'error');
+            });
+            // Redirect to Home
+            window.location.hash = '#/';
           });
-          // Redirect to Home
-          window.location.hash = '#/';
-        });
-      } else {
-        alert('Something went wrong. Please try registering again.');
-      }
+        } else {
+          alert('Something went wrong. Please try registering again.');
+        }
+      }).catch((err) => {
+        console.error('Registration failed:', err);
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
+        alert('Something went wrong. Please check your network connection and try again.');
+      });
     } else {
       // Focus on first invalid element
       const firstInvalid = form.querySelector('.form-group.error input, .form-group.error select');
