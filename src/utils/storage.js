@@ -76,8 +76,13 @@ export const storage = {
   },
 
   // Helper: Fetch remote registrations directly
+  // NPoint.io returns Cache-Control: max-age=3600 which causes browsers to
+  // serve stale cached data for up to 1 hour. We bypass this with cache: 'no-store'
+  // AND a timestamp query parameter to bust CDN/proxy caches.
   async getRemoteRegistrations() {
-    const response = await fetch(NPOINT_URL);
+    const cacheBuster = `_cb=${Date.now()}`;
+    const url = `${NPOINT_URL}?${cacheBuster}`;
+    const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`Cloud database fetch failed: ${response.statusText}`);
     }
