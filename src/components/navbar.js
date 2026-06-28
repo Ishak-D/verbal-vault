@@ -1,3 +1,5 @@
+import { supabase } from '../utils/supabase.js';
+
 export function initNavbar() {
   const navbar = document.getElementById('navbar');
   if (!navbar) return;
@@ -88,8 +90,13 @@ export function initNavbar() {
 
     const logoutBtn = document.getElementById('nav-logout');
     if (logoutBtn) {
-      logoutBtn.addEventListener('click', (e) => {
+      logoutBtn.addEventListener('click', async (e) => {
         e.preventDefault();
+        try {
+          await supabase.auth.signOut();
+        } catch (err) {
+          console.warn('Navbar signOut issue:', err);
+        }
         sessionStorage.removeItem('verbal_vault_admin_logged_in');
         closeMenu();
         window.dispatchEvent(new CustomEvent('adminLoginStateChanged'));

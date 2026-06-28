@@ -1,4 +1,5 @@
 import { storage } from '../utils/storage.js';
+import { supabase } from '../utils/supabase.js';
 
 export function renderAdmin(container) {
   // Verify Admin Login State
@@ -234,6 +235,16 @@ export function renderAdmin(container) {
   async function loadRegistrations() {
     showLoading();
     try {
+      // Secure check: Validate that the active user actually has a valid session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn('Session invalid or expired, redirecting to login...');
+        sessionStorage.removeItem('verbal_vault_admin_logged_in');
+        window.dispatchEvent(new CustomEvent('adminLoginStateChanged'));
+        window.location.hash = '#/admin-login';
+        return;
+      }
+
       registrations = await storage.getRegistrations();
       renderTableContent();
     } catch (e) {
@@ -277,7 +288,13 @@ export function renderAdmin(container) {
 
   container.querySelector('#btn-export-csv').addEventListener('click', exportCSV);
   container.querySelector('#btn-clear-all').addEventListener('click', clearAll);
-  container.querySelector('#btn-admin-logout').addEventListener('click', () => {
+  
+  container.querySelector('#btn-admin-logout').addEventListener('click', async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Supabase signout issue:', e);
+    }
     sessionStorage.removeItem('verbal_vault_admin_logged_in');
     window.dispatchEvent(new CustomEvent('adminLoginStateChanged'));
     window.location.hash = '#/';

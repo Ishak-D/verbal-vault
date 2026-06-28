@@ -1,59 +1,69 @@
-// Cross-device synced storage for registrations using NPoint.io
-const STORAGE_KEY = 'verbal_vault_registrations';
-const NPOINT_URL = 'https://api.npoint.io/3a57cee0b33207f540f0';
+import { supabase } from './supabase.js';
 
-// Helper: Merge local and remote registrations without duplicates
-function mergeRegistrations(local, remote) {
-  const map = new Map();
-  // Add remote first
-  remote.forEach(item => {
-    if (item && item.id) map.set(item.id, item);
-  });
-  // Local overrides/adds
-  local.forEach(item => {
-    if (item && item.id) map.set(item.id, item);
-  });
-  // Sort by timestamp descending (newest first)
-  return Array.from(map.values())
-    .filter(Boolean)
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+const STORAGE_KEY = 'verbal_vault_registrations';
+
+// Helper: Map camelCase frontend fields to snake_case database columns
+function mapToDB(clientReg) {
+  return {
+    id: clientReg.id || 'reg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+    timestamp: clientReg.timestamp || new Date().toISOString(),
+    first_name: clientReg.firstName,
+    family_name: clientReg.familyName,
+    age: clientReg.age,
+    phone: clientReg.phone,
+    email: clientReg.email,
+    course: clientReg.course,
+    notes: clientReg.notes
+  };
+}
+
+// Helper: Map snake_case database columns back to camelCase frontend fields
+function mapFromDB(dbReg) {
+  return {
+    id: dbReg.id,
+    timestamp: dbReg.timestamp,
+    firstName: dbReg.first_name,
+    familyName: dbReg.family_name,
+    age: dbReg.age,
+    phone: dbReg.phone,
+    email: dbReg.email,
+    course: dbReg.course,
+    notes: dbReg.notes
+  };
 }
 
 export const storage = {
-  // Save registration locally and sync to cloud
+  // Save registration locally and sync to Supabase
   async saveRegistration(data) {
-    const newRegistration = {
-      id: 'reg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString(),
-      ...data
-    };
+    const dbData = mapToDB(data);
+    const clientData = mapFromDB(dbData);
 
     try {
-      // Fetch latest remote registrations
-      const remoteRegs = await this.getRemoteRegistrations();
-      
-      // Prepend new registration
-      remoteRegs.unshift(newRegistration);
-      
-      // Push back to cloud
-      await this.pushToCloud(remoteRegs);
-      
+      // Atomic insert to avoid concurrency race conditions
+      const { error } = await supabase
+        .from('registrations')
+        .insert([dbData]);
+
+      if (error) throw error;
+
       // Update local storage cache
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteRegs));
-      
+      const localRegs = this.getLocalRegistrations();
+      localRegs.unshift(clientData);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(localRegs));
+
       // Notify UI locally
-      window.dispatchEvent(new CustomEvent('registrationAdded', { detail: newRegistration }));
+      window.dispatchEvent(new CustomEvent('registrationAdded', { detail: clientData }));
       return true;
     } catch (e) {
-      console.warn('Failed to save registration directly to cloud, falling back to local storage:', e);
+      console.warn('Failed to save to Supabase, falling back to local storage:', e);
       try {
         const localRegs = this.getLocalRegistrations();
-        localRegs.unshift(newRegistration);
+        localRegs.unshift(clientData);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(localRegs));
+
+        window.dispatchEvent(new CustomEvent('registrationAdded', { detail: clientData }));
         
-        window.dispatchEvent(new CustomEvent('registrationAdded', { detail: newRegistration }));
-        
-        // Fire background sync attempt
+        // Try background sync
         this.syncWithCloud().catch(err => console.warn('Background sync failed:', err));
         return true;
       } catch (localError) {
@@ -63,34 +73,26 @@ export const storage = {
     }
   },
 
-  // Get registrations (fetches from cloud database, falls back to local cache if offline)
+  // Get registrations (fetches from Supabase, falls back to local cache if offline)
   async getRegistrations() {
     try {
-      const remoteRegs = await this.getRemoteRegistrations();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteRegs));
-      return remoteRegs;
+      const { data, error } = await supabase
+        .from('registrations')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+      if (error) throw error;
+
+      const mapped = data.map(mapFromDB);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
+      return mapped;
     } catch (e) {
-      console.warn('Could not retrieve from cloud, returning local cache:', e);
+      console.warn('Could not retrieve from Supabase, returning local cache:', e);
       return this.getLocalRegistrations();
     }
   },
 
-  // Helper: Fetch remote registrations directly
-  // NPoint.io returns Cache-Control: max-age=3600 which causes browsers to
-  // serve stale cached data for up to 1 hour. We bypass this with cache: 'no-store'
-  // AND a timestamp query parameter to bust CDN/proxy caches.
-  async getRemoteRegistrations() {
-    const cacheBuster = `_cb=${Date.now()}`;
-    const url = `${NPOINT_URL}?${cacheBuster}`;
-    const response = await fetch(url, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`Cloud database fetch failed: ${response.statusText}`);
-    }
-    const data = await response.json();
-    return data && Array.isArray(data.registrations) ? data.registrations : [];
-  },
-
-  // Get local registrations only (synchronous cache view)
+  // Get local registrations cache
   getLocalRegistrations() {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
@@ -101,22 +103,29 @@ export const storage = {
     }
   },
 
-  // Delete registration and sync (async)
+  // Delete registration and sync
   async deleteRegistration(id) {
     try {
-      const remoteRegs = await this.getRemoteRegistrations();
-      const filtered = remoteRegs.filter(reg => reg.id !== id);
-      
-      await this.pushToCloud(filtered);
+      const { error } = await supabase
+        .from('registrations')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      const localRegs = this.getLocalRegistrations();
+      const filtered = localRegs.filter(reg => reg.id !== id);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+
       window.dispatchEvent(new CustomEvent('registrationAdded'));
       return true;
     } catch (e) {
-      console.error('Error deleting registration from cloud:', e);
+      console.error('Error deleting registration from Supabase:', e);
       try {
         const localRegs = this.getLocalRegistrations();
         const filtered = localRegs.filter(reg => reg.id !== id);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+
         window.dispatchEvent(new CustomEvent('registrationAdded'));
         this.syncWithCloud().catch(err => console.warn('Background sync after delete failed:', err));
         return true;
@@ -127,15 +136,21 @@ export const storage = {
     }
   },
 
-  // Clear all registrations and sync (async)
+  // Clear all registrations and sync
   async clearRegistrations() {
     try {
-      await this.pushToCloud([]);
+      const { error } = await supabase
+        .from('registrations')
+        .delete()
+        .neq('id', ''); // Delete all rows
+
+      if (error) throw error;
+
       localStorage.removeItem(STORAGE_KEY);
       window.dispatchEvent(new CustomEvent('registrationsCleared'));
       return true;
     } catch (e) {
-      console.error('Error clearing registrations from cloud:', e);
+      console.error('Error clearing registrations from Supabase:', e);
       try {
         localStorage.removeItem(STORAGE_KEY);
         window.dispatchEvent(new CustomEvent('registrationsCleared'));
@@ -148,40 +163,50 @@ export const storage = {
     }
   },
 
-  // Async: Sync local with cloud database (bidirectional merge)
+  // Sync local cache with Supabase database (bidirectional merge)
   async syncWithCloud() {
     try {
-      const remoteRegs = await this.getRemoteRegistrations();
+      const { data: remoteData, error } = await supabase
+        .from('registrations')
+        .select('*');
+
+      if (error) throw error;
+
+      const remoteRegs = remoteData.map(mapFromDB);
       const localRegs = this.getLocalRegistrations();
+
+      // Merge registrations
+      const map = new Map();
+      remoteRegs.forEach(item => {
+        if (item && item.id) map.set(item.id, item);
+      });
+      localRegs.forEach(item => {
+        if (item && item.id) map.set(item.id, item);
+      });
       
-      const merged = mergeRegistrations(localRegs, remoteRegs);
-      
-      // If there's any change, save and notify UI
+      const merged = Array.from(map.values())
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      // Update local cache
       if (JSON.stringify(merged) !== JSON.stringify(localRegs)) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
         window.dispatchEvent(new CustomEvent('registrationAdded'));
       }
-      
-      // If cloud is missing data, push merged list
-      if (JSON.stringify(merged) !== JSON.stringify(remoteRegs)) {
-        await this.pushToCloud(merged);
+
+      // Detect and push local changes that are not in Supabase
+      const remoteIds = new Set(remoteRegs.map(r => r.id));
+      const newLocalRegs = localRegs.filter(r => !remoteIds.has(r.id));
+
+      if (newLocalRegs.length > 0) {
+        const { error: insertError } = await supabase
+          .from('registrations')
+          .insert(newLocalRegs.map(mapToDB));
+        
+        if (insertError) throw insertError;
       }
     } catch (e) {
-      console.warn('Cloud sync error (offline mode):', e);
-    }
-  },
-
-  // Async: Push registrations to cloud database
-  async pushToCloud(registrations) {
-    const response = await fetch(NPOINT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ registrations })
-    });
-    if (!response.ok) {
-      throw new Error(`Cloud database write failed: ${response.statusText}`);
+      console.warn('Supabase sync error (offline mode):', e);
     }
   }
 };

@@ -1,3 +1,5 @@
+import { supabase } from '../utils/supabase.js';
+
 export function renderAdminLogin(container) {
   const isLoggedIn = sessionStorage.getItem('verbal_vault_admin_logged_in') === 'true';
   if (isLoggedIn) {
@@ -15,14 +17,14 @@ export function renderAdminLogin(container) {
         
         <div class="register-form-wrapper animate-scale" style="max-width: 480px; margin: 0 auto;">
           <div id="login-error-banner" class="form-error-banner" style="display: none; margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); background: rgba(232, 93, 58, 0.1); border-left: 4px solid var(--coral); color: var(--coral); border-radius: var(--radius-sm); font-size: var(--font-sm); font-weight: 500;">
-            Invalid username or password. Please try again.
+            Invalid username/email or password. Please try again.
           </div>
 
           <form id="admin-login-form" novalidate>
             <div class="form-group">
-              <label for="admin-username">Username <span class="required">*</span></label>
-              <input type="text" id="admin-username" placeholder="Enter admin username" required />
-              <div class="form-error">Please enter your username.</div>
+              <label for="admin-username">Username or Email <span class="required">*</span></label>
+              <input type="text" id="admin-username" placeholder="Enter admin username or email" required />
+              <div class="form-error">Please enter your username or email.</div>
             </div>
             
             <div class="form-group" style="margin-top: var(--space-4)">
@@ -69,7 +71,7 @@ export function renderAdminLogin(container) {
     });
   });
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     let isValid = true;
 
@@ -83,8 +85,23 @@ export function renderAdminLogin(container) {
       const username = form.querySelector('#admin-username').value.trim();
       const password = form.querySelector('#admin-password').value.trim();
 
-      // Simple mock credential check for prototype
-      if (username === 'admin' && password === 'adminPassword123!') {
+      const submitBtn = form.querySelector('button[type="submit"]');
+      const originalText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Logging in...';
+
+      // Map simple "admin" to "admin@verbalvault.com" for backwards compatibility/ease of access
+      const email = username.includes('@') ? username : `${username}@verbalvault.com`;
+
+      try {
+        // Authenticate securely against Supabase Auth
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) throw error;
+
         sessionStorage.setItem('verbal_vault_admin_logged_in', 'true');
         
         // Notify navbar to update
@@ -92,11 +109,16 @@ export function renderAdminLogin(container) {
         
         // Redirect to dashboard
         window.location.hash = '#/admin';
-      } else {
+      } catch (err) {
+        console.error('Admin authentication failed:', err);
+        errorBanner.textContent = err.message || 'Invalid username or password. Please try again.';
         errorBanner.style.display = 'block';
         form.querySelector('#admin-password').value = '';
         form.querySelectorAll('.form-group').forEach(g => g.classList.remove('success'));
         form.querySelector('#admin-username').focus();
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
       }
     }
   });
